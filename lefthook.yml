@@ -1,0 +1,11 @@
+# pre-commit 게이트 — CI와 같은 검사를 커밋 시점에 먼저 (테스트까지 포함한다)
+pre-commit:
+  parallel: true
+  commands:
+    biome:
+      glob: "*.{ts,js,json}"
+      run: pnpm exec biome check --no-errors-on-unmatched {staged_files}
+    typecheck:
+      run: pnpm typecheck
+    test:
+      run: pnpm test

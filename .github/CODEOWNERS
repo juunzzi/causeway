@@ -1,0 +1,5 @@
+# 세션 격리·권한 경계와 CI 게이트는 리뷰 필수 — 여기 diff 가 곧 "무엇이 열렸나"다.
+/src/runner/ @juunzzi
+/src/security/ @juunzzi
+/src/mcp/registry.ts @juunzzi
+/.github/ @juunzzi

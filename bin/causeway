@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# causeway 운영 CLI (OPS-03) — PM2 래퍼.
+# 사용법: causeway {install|start|stop|restart|update|status|logs|err|archive}
+#
+# - install: PM2 에 등록(+부팅 자동시작 pm2 startup/save 안내)
+# - restart: scripts/restart.sh 로 위임 — 부팅 정상성 판정 후 exit code (OPS-02)
+# - update:  배포 1회 수동 실행 — 평소엔 main CI 성공 직후 self-hosted runner 가 부른다
+# - archive: 오래된 세션 트랜스크립트를 md 요약으로 접는다(scripts/archive-sessions.mjs).
+#            기본은 --dry 가 아니라 실제 실행이다 — 인자는 그대로 스크립트에 넘어간다.
+# - err: err 로그 tail — **일상 디버깅 진입점**(OPS-03). 무슨 일이 났는지 먼저 여기부터 본다.
+#
+# PM2 앱은 봇 하나다. 자동 배포는 PM2 가 아니라 GitHub Actions 가 트리거하므로(2026-08-10:
+# 폴링 상주 제거), `stop` 은 봇만 멈추면 된다 — 대신 그동안 머지된 커밋은 자동으로 따라잡히지
+# 않는다. `start` 뒤에 `causeway status` 로 배포 뒤처짐을 확인한다.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP="causeway"
+ECOSYSTEM="$ROOT/ecosystem.config.cjs"
+ERR_LOG="$ROOT/var/log/${APP}.err.log"
+OUT_LOG="$ROOT/var/log/${APP}.out.log"
+
+PM2="${PM2_BIN:-pm2}"
+command -v "$PM2" >/dev/null 2>&1 || PM2="$ROOT/node_modules/.bin/pm2"
+
+mkdir -p "$ROOT/var/log"
+
+_pm2() { "$PM2" "$@"; }
+
+cmd_install() {
+  echo "📦 PM2 등록: $APP"
+  _pm2 start "$ECOSYSTEM" --only "$APP"
+  _pm2 save
+  cat <<'EOF'
+✅ 등록 완료.
+   부팅 자동시작을 원하면 (최초 1회):
+     pm2 startup    # 출력된 sudo 명령을 실행
+     pm2 save
+EOF
+}
+
+cmd_start() {
+  if _pm2 describe "$APP" >/dev/null 2>&1; then
+    _pm2 start "$APP"
+  else
+    _pm2 start "$ECOSYSTEM" --only "$APP"
+  fi
+  echo "✅ 시작 요청 완료 — 정상성은 \`causeway status\` / \`causeway err\` 로 확인"
+}
+
+cmd_stop() {
+  _pm2 stop "$APP"
+  echo "✅ 종료 완료 — 멈춘 동안 머지된 커밋은 자동으로 따라잡히지 않는다"
+  echo "   (재개 후 \`causeway status\` 로 배포 뒤처짐 확인)"
+}
+
+cmd_restart() {
+  # 부팅 정상성 판정까지 위임 (OPS-02) — exit code 를 그대로 전파.
+  exec "$ROOT/scripts/restart.sh"
+}
+
+cmd_update() {
+  # CI 트리거를 기다리지 않고 지금 한 번 — 게이트(CI·inflight·부팅 판정)는 동일하게 탄다.
+  exec "$ROOT/scripts/auto-update.sh" --once
+}
+
+cmd_status() {
+  echo "── $APP"
+  _pm2 describe "$APP" 2>/dev/null | grep -E "status|restarts|uptime|pid" || {
+    echo "⚠️  미등록 — \`causeway install\` 실행"
+    return 1
+  }
+  echo "── 배포"
+  echo "  deployed : $(cat "$ROOT/var/deployed-sha" 2>/dev/null || echo '(미기록)')"
+  [[ -f "$ROOT/var/quarantine-sha" ]] &&
+    echo "  격리     : $(cat "$ROOT/var/quarantine-sha") ← 이 커밋은 부팅 실패로 배포 보류 중"
+  deploy_lag
+  echo "  러너     : $(runner_state)"
+  return 0
+}
+
+# 배포가 origin/main 을 따라잡았는가.
+#
+# 폴링 상주를 없앤 뒤로 자동 배포 경로는 CI 트리거 하나뿐이다 — 그게 안 돌면 **아무 일도 안
+# 일어나고 아무도 모른다**(러너가 죽으면 job 은 GitHub 큐에 걸린 채 조용하다). 그 조용함을
+# 여기서 깬다. fetch 는 하지 않는다(status 는 빨라야 한다) — 로컬 remote-tracking ref 기준이라
+# 마지막 fetch 이후 얹힌 커밋은 안 보일 수 있고, 그건 `causeway update` 가 알려준다.
+deploy_lag() {
+  local deployed remote
+  deployed=$(cat "$ROOT/var/deployed-sha" 2>/dev/null || printf '')
+  remote=$(git -C "$ROOT" rev-parse origin/main 2>/dev/null || printf '')
+  [[ -n "$deployed" && -n "$remote" ]] || return 0
+  if [[ "$deployed" == "$remote" ]]; then
+    echo "  뒤처짐   : 없음 (origin/main 과 동일)"
+    return 0
+  fi
+  echo "  뒤처짐   : ⚠️  origin/main($(git -C "$ROOT" rev-parse --short "$remote" 2>/dev/null)) 미배포 —"
+  echo "             $(git -C "$ROOT" rev-list --count "$deployed..$remote" 2>/dev/null || echo '?')개 커밋. \`causeway update\` 로 즉시 배포"
+}
+
+# self-hosted runner(launchd) 생존 — 자동 배포의 유일한 트리거라 이게 곧 "자동 배포가 살아있나"다.
+runner_state() {
+  local label
+  label=$(launchctl list 2>/dev/null | grep -o 'actions\.runner\.[^[:space:]]*' | head -1)
+  if [[ -z "$label" ]]; then
+    printf '⚠️  미등록/정지 — 자동 배포 안 됨 (SETUP.md §11-1)'
+    return 0
+  fi
+  printf '%s (launchd)' "$label"
+}
+
+cmd_logs() { tail -f "$OUT_LOG" "$ERR_LOG"; }
+
+cmd_err() { tail -n 50 "$ERR_LOG"; }
+
+case "${1:-help}" in
+  install) cmd_install ;;
+  start)   cmd_start ;;
+  stop)    cmd_stop ;;
+  restart) cmd_restart ;;
+  update)  cmd_update ;;
+  archive) shift; exec node "$ROOT/scripts/archive-sessions.mjs" "$@" ;;
+  status)  cmd_status ;;
+  logs)    cmd_logs ;;
+  err)     cmd_err ;;
+  *)
+    cat <<EOF
+사용법: causeway {install|start|stop|restart|update|status|logs|err|archive}
+
+  install   PM2 에 등록 (+부팅 자동시작 안내)
+  start     시작
+  stop      정상 종료 (재기동 안 함)
+  restart   재시작 + 부팅 정상성 판정 (실패 시 exit 1)
+  update    origin/main 배포 1회 수동 실행 (평소엔 main CI 가 트리거)
+  status    PM2 상태 + 배포된 커밋 + 뒤처짐 + 러너 생존
+  logs      stdout/err 실시간 tail
+  err       err 로그 최근 50줄 — 일상 디버깅 진입점
+  archive   오래된 세션 트랜스크립트를 md 요약으로 접기 (--dry 로 예행)
+EOF
+    exit 1
+    ;;
+esac

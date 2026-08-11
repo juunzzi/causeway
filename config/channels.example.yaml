@@ -1,0 +1,18 @@
+# 채널 선언 예시 — 실제 파일은 `config/channels.yaml` (채널 ID는 시크릿이 아니므로 커밋 대상).
+# 원칙: 코드와 문서는 Slack ID 를 직접 들지 않고 logical 이름만 참조한다.
+# 부팅 시 검증(fail-fast): 논리명 중복, 채널 ID 중복, 스키마 위반.
+#
+# 이 봇의 트리거는 @멘션과 DM 뿐이라 **수집(watcher) 채널이 없다.** 여기 선언하는 것은
+# 봇이 스스로 무언가를 게시할 두 자리뿐이고, 파일이 아예 없어도 봇은 뜬다(그 경우 통보는
+# 로그로만 남는다).
+#
+# role 2종:
+#   - ops-notify     : 운영 신호(워치독·재시도 소진·자동 업데이트 실패). 보통 본인 DM 채널.
+#   - release-notify : 자동 업데이터의 릴리즈 공지 게시처. 미선언이면 공지가 나가지 않는다.
+channels:
+  - logical: ops
+    id: DXXXXXXXXXX # 본인과의 DM 도 채널 ID 다(D 로 시작)
+    role: ops-notify
+  - logical: release
+    id: CXXXXXXXXXX
+    role: release-notify
