@@ -1,7 +1,8 @@
 # causeway 작업 지침
 
 이 레포에서 작업하는 에이전트가 매번 읽는 맥락이다. 설치·자격증명은 [SETUP.md](./SETUP.md),
-설계 근거는 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md) 가 SoT — 여기 중복해 쓰지 않는다.
+설계 근거는 [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), 조직 도구·절차를 붙이는 법은
+[docs/EXTENDING.md](./docs/EXTENDING.md) 가 SoT — 여기 중복해 쓰지 않는다.
 
 ## 이 봇이 무엇인가
 
@@ -108,6 +109,7 @@ crontab·launchd·GitHub Actions 가 아니라 **봇 프로세스 안**에서 �
 
 - **새 도구 추가** = `src/mcp/<도구>.ts` + `src/mcp/registry.ts` 배열 한 항목 + `src/context.ts`
   배선 판정(+부팅 로그 한 줄). registry 배열이 곧 노출 경계라 glob 자동발견은 쓰지 않는다.
+  틀은 `src/mcp/example.ts` — 등록돼 있지 않은 템플릿이라 복사해서 고쳐 쓴다.
   도구를 여러 방식으로 붙일 수 있다 — in-process(자격증명을 세션에서 감출 때), stdio(외부 CLI),
   원격 HTTP(호스트 OAuth). 어느 쪽이든 `allowedTools` 를 빠뜨리면 도구가 조용히 없는 상태가 된다.
 - **새 잡 추가** = `src/jobs/<이름>/` + `src/jobs/index.ts` 한 줄. 같은 이유다.
