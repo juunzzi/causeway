@@ -15,13 +15,25 @@
 # 인자 없이 실행해 폴링 모드로 임시 대체한다(SETUP.md §11).
 name: deploy
 
-# ci 성공 **이후**에만 — push 에 직접 걸면 테스트 결과를 기다리지 않고 배포한다.
+# ⚠️ **자동 트리거는 꺼둔 채로 배포한다.** 이 레포에는 self-hosted 러너가 없고, 러너 없는
+# 레포에서 `workflow_run` 을 켜두면 push 마다 job 이 **큐에 걸린 채 영원히 대기한다** —
+# 실패로 표시되지도 않아서 Actions 탭만 조용히 더러워진다(2026-08-11 실측: queued 2건 적체).
+# fork 한 사람도 첫 push 부터 같은 것을 본다.
+#
+# ── 켜는 법 ──────────────────────────────────────────────────────────────────
+# ① 배포할 호스트에 self-hosted 러너를 등록하고(레포 밖 경로에 설치할 것 — 러너 작업
+#    디렉토리가 워킹트리를 더럽히면 auto-update.sh 의 "로컬 수정 있음" 게이트가 배포를
+#    영구 보류시킨다), 라벨을 아래 `runs-on` 과 맞춘다.
+# ② 아래 `workflow_run` 블록의 주석을 푼다. 그때부터 이것이 유일한 자동 배포 경로다.
+# ③ 마지막 `run:` 의 체크아웃 경로를 실제 봇이 도는 경로로 바꾼다.
+#
+# 그전까지는 `workflow_dispatch`(수동 실행)만 열려 있다.
 on:
-  workflow_run:
-    workflows: [ci]
-    types: [completed]
-    branches: [main]
-  # 러너가 죽어 있던 사이의 커밋을 손으로 따라잡을 때(폴링을 기다리지 않고).
+  # ci 성공 **이후**에만 — push 에 직접 걸면 테스트 결과를 기다리지 않고 배포한다.
+  # workflow_run:
+  #   workflows: [ci]
+  #   types: [completed]
+  #   branches: [main]
   workflow_dispatch:
 
 jobs:
