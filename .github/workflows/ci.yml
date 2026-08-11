@@ -1,0 +1,56 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # node:sqlite 안정 사용 — 호스트 런타임(24)과 일치
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  gitleaks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 전체 히스토리 스캔 (과거 커밋에 섞인 키도 잡는다)
+      - name: gitleaks scan
+        env:
+          # untrusted 컨텍스트는 env 경유로만 참조한다 — run: 에 직접 보간하면 ref 이름의
+          # 셸 메타문자(`$`·백틱·`;`)가 러너에서 그대로 실행된다(팀 규칙).
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          # fetch-depth:0 은 actions/checkout 특성상 origin 의 모든 브랜치를 함께 가져온다
+          # (단일 ref 만 unshallow 하는 게 아니라 +refs/heads/*:refs/remotes/origin/* 로 fetch).
+          # gitleaks 는 로컬 저장소에 존재하는 모든 브랜치를 스캔 대상으로 삼으므로, `--all` 로
+          # 돌리면 **머지되지 않은 남의 브랜치**가 이 실행을 막는다. 두 번 당했다:
+          #   - pull_request: 무관한 브랜치의 테스트 픽스처가 PR 을 차단 → 이때 pull_request
+          #     쪽만 "base 이후 새 커밋"으로 좁혔다.
+          #   - push(main): 같은 원인이 그대로 남아 머지 후 main 이 빨간불이 됐고, 업데이터의
+          #     CI 게이트가 그걸 **배포 차단**으로 확대해 20여 분간 배포가 멈췄다. 정작 main
+          #     히스토리 자체는 깨끗했다 — 걸린 건 이미 squash 머지된 브랜치의 잔여 ref 에
+          #     남은 중간 커밋이었다.
+          # 그래서 main 은 자기 히스토리만 본다. 커버리지는 줄지 않는다: 브랜치의 새 커밋은
+          # 그 PR 의 pull_request 스캔이 이미 보고, 머지되면 main 히스토리로 들어와 여기서
+          # 다시 검사된다. 어디에도 안 머지된 코드는 애초에 배포되지 않는다.
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            LOG_OPTS="origin/$BASE_REF..HEAD"
+          else
+            LOG_OPTS="HEAD"
+          fi
+          docker run --rm -v "$PWD:/repo" \
+            zricethezav/gitleaks:latest \
+            detect --source /repo --no-banner --redact --log-opts="$LOG_OPTS"

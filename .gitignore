@@ -1,0 +1,23 @@
+# 시크릿 — 실키는 호스트에만 (원본: FE 챕터 1Password vault)
+.env
+.env.*
+!.env.example
+
+# 런타임 산출물
+node_modules/
+dist/
+data/
+workspace/
+logs/
+*.log
+
+# OS
+.DS_Store
+
+# 호스트 로컬 실제 config (예시 파일만 커밋 — .env 와 같은 원칙)
+config/access.json
+config/channels.yaml
+config/schedules.json
+
+# 봇 런타임 산출물 (SQLite 큐 DB·WAL·friction 로그·PM2 로그)
+var/

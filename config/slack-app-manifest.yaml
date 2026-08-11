@@ -1,0 +1,61 @@
+# Slack 앱 매니페스트 — 앱 설정 = 리뷰 가능한 코드.
+#
+# 이 파일을 고치고 `node scripts/push-manifest.mjs` 로 반영한다(`--dry` 로 검증만).
+# 콘솔에서 직접 고치지 않는다 — 앱에만 반영하면 다음 사람이 이 파일을 믿고 재설치했다가
+# 기능이 조용히 빠진다.
+#
+# ⚠️ **봇 표시 이름은 이 파일이 SoT 가 아니다.** `features.bot_user.display_name` 은 표시 이름과
+# @핸들을 겸해서, 비ASCII(한글 등)면 username 파생에 실패해 저장 자체가 거부된다
+# (`bad_username`). 워크스페이스에 보이는 이름을 비ASCII 로 두고 싶으면 Slack 워크스페이스
+# 앱 관리에서 따로 설정한다:
+#   https://<workspace>.slack.com/marketplace/<APP_ID>-?tab=settings → 봇 사용자 → 편집
+# api.slack.com 쪽 값은 **새 설치에 쓰이는 값**이라, 이미 설치된 봇 이름은 저기서만 바뀐다.
+#
+# 주의:
+# - 봇 토큰은 봇이 멤버인 채널의 이벤트만 받는다 → 봇을 부를 채널마다 `/invite @causeway` 가
+#   필요하다(그 초대가 곧 읽기 범위 선언이다).
+# - Agent 모드(plan 카드 스트리밍)는 App 설정 → Agents 의 "Agent experience" 토글이 켜져야
+#   열린다. 그 토글은 매니페스트에 없다 — 켜면 features.agent_view 블록이 생길 뿐이다.
+#   꺼져 있으면 chat.startStream 이 거절되고 진행 카드로 자동 폴백한다.
+display_information:
+  name: causeway
+  description: Slack ↔ Claude Code bridge
+  background_color: "#000000"
+features:
+  # DM 입력창 활성화 — 이 블록이 없으면 재설치 시 "메시지 보내기 꺼짐"이 되어 봇 DM 이 막힌다.
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    # ASCII 만. 위 ⚠️ 참고.
+    display_name: causeway
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read # @멘션 수신
+      - im:history # DM 수신
+      - im:read
+      - im:write
+      - channels:history # 붙여넣은 링크 읽기 + 좀비 소켓 복구 시 재주입
+      - channels:read
+      - groups:history # 비공개 채널 링크 읽기(요청자도 멤버일 때만 허용)
+      - groups:read
+      - chat:write # 응답 게시 + chat.update(진행 카드)
+      - assistant:write # Agent plan 카드 스트리밍
+      - reactions:read # 취소 리액션 수신
+      - reactions:write # ⏳→✅/❌ 리액션 상태머신 + 취소 어포던스
+      - users:read # 멘션 ↔ 표시명 치환
+      - files:read # 스레드 첨부파일 읽기
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.im # DM
+      - assistant_thread_started # plan 카드 스트리밍 활성 조건
+      # 취소 트리거 — 이 줄이 빠지면 리액션이 배달되지 않아 취소가 조용히 죽는다(에러도 없다).
+      - reaction_added
+  interactivity:
+    is_enabled: true
+  socket_mode_enabled: true

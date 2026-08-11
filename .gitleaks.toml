@@ -1,0 +1,13 @@
+# gitleaks 설정 — 기본 룰 전체 + 아래 allowlist만 예외
+[extend]
+useDefault = true
+
+# 아래 테스트들은 마스킹·인증 로직을 검증하려 "진짜처럼 생긴 가짜" 시크릿 픽스처가 필수다.
+# 파일 단위로 좁게 허용한다 — 목록 밖 파일에 시크릿 형태 문자열을 두는 것은 여전히 차단된다.
+# (CI 의 gitleaks 이미지는 저엔트로피 합성 문자열도 generic-api-key 로 잡으므로 파일을 명시 제외한다.)
+[allowlist]
+description = "시크릿 마스킹/인증 테스트의 가짜 시크릿 픽스처"
+paths = [
+  '''src/security/maskSecrets\.test\.ts''',
+  '''src/config/env\.test\.ts''',
+]

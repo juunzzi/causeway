@@ -1,0 +1,11 @@
+[
+  {
+    "id": "daily-briefing",
+    "cron": "0 9 * * *",
+    "enabled": false,
+    "channel": "슬랙 채널 ID. 봇과의 DM 도 채널이다(D 로 시작)",
+    "userId": "요청자로 기록될 슬랙 유저 ID (U 로 시작)",
+    "rootText": ":sunny: 오늘 브리핑을 만들고 있습니다.",
+    "promptFile": "config/prompts/daily-briefing.md"
+  }
+]
