@@ -17,10 +17,27 @@
 pnpm check && pnpm typecheck && pnpm test
 ```
 
-세 개 다 CI 게이트다. lefthook 이 pre-commit 에서도 같은 걸 돌리므로, 커밋이 느리다고
-`--no-verify` 로 우회하면 PR 에서 같은 자리에 다시 걸린다.
+lefthook 이 pre-commit 에서도 같은 걸 돌리므로, 커밋이 느리다고 `--no-verify` 로 우회하면
+PR 에서 같은 자리에 다시 걸린다.
 
 Node 24+ 가 필요하다 — `node:sqlite` 내장을 쓴다.
+
+## CI 가 보는 것
+
+| 검사 | 언제 | 막나 |
+|---|---|---|
+| `check` (`biome` · `tsc` · `vitest`) | PR · main | ✅ 머지 차단 |
+| `gitleaks` | PR · main | ✅ 머지 차단 |
+| **PR 제목 규약** | PR (제목 수정 시 재검사) | 위 표의 `type: 설명` 형식 |
+| **의존성 심사** | PR | 새로 끌어오는 의존성의 알려진 취약점(high 이상)·라이선스 |
+| **CodeQL** | PR · main · 주 1회 | ❌ — 결과는 Security 탭으로 간다 |
+
+PR 제목을 따로 검사하는 것은 **squash merge 라 그 제목이 곧 `main` 의 커밋 메시지**가 되기
+때문이다. CodeQL 을 머지 게이트로 삼지 않는 것은, 정적 분석의 오탐이 상시 빨간불이 되면
+그때부터 아무도 결과를 안 보기 때문이다.
+
+의존성 갱신 PR 은 Dependabot 이 주 1회 묶어서 연다(major 는 개별 PR). 자동 머지되는 것은
+없고 위 게이트를 그대로 통과해야 한다.
 
 ## 코드에서 지키는 것
 
