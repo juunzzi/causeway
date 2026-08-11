@@ -5,9 +5,21 @@ on:
   push:
     branches: [main]
 
+# 기본값은 레포 설정에 따라 job 토큰에 쓰기 권한까지 준다. 이 워크플로는 읽고 검사만 하므로
+# 최소로 내린다 — 침해된 의존성이 빌드 중에 무엇을 할 수 있는지가 이 한 줄로 갈린다.
+permissions:
+  contents: read
+
+# 같은 브랜치에 연달아 push 하면 앞선 실행은 의미가 없다. main 은 취소하지 않는다 —
+# 배포·동기화가 `ci` 완료를 기다리고 있어서, 중간 실행이 잘리면 그 커밋 구간이 통째로 빠진다.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

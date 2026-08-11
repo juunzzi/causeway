@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Slack ↔ Claude Code 다리 — 내구 잡 큐 기반 슬랙 봇 보일러플레이트",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "packageManager": "pnpm@10.23.0",
   "scripts": {

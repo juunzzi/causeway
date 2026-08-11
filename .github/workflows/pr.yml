@@ -1,0 +1,66 @@
+# PR 에만 걸리는 게이트 둘 — 제목 규약과 의존성 심사.
+#
+# `ci.yml` 과 나누는 이유: 이 둘은 push(main)에서는 의미가 없다. 제목은 이미 커밋이 됐고,
+# 의존성 심사는 base↔head 비교라 PR 컨텍스트가 있어야 성립한다.
+name: pr
+
+on:
+  pull_request:
+    # 제목만 고쳐도 다시 검사해야 한다 — 기본 트리거에는 edited 가 없어서, 지적받고 제목을
+    # 고쳐도 빨간불이 그대로 남는다. 그 상태로 며칠 방치되는 것이 이 검사의 흔한 실패 모드다.
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    name: PR 제목 규약
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # 이름에 콜론이 들어가므로 따옴표가 필수다 — 없으면 YAML 이 중첩 매핑으로 읽고 깨진다.
+      - name: "type: 설명 형식인지 본다"
+        env:
+          # untrusted 컨텍스트는 반드시 env 경유 — `run:` 에 직접 보간하면 제목에 넣은
+          # 셸 메타문자(`$`·백틱·`;`)가 러너에서 그대로 실행된다. PR 제목은 누구나 쓴다.
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # squash merge 라 **PR 제목이 곧 main 의 커밋 메시지**가 된다. 그래서 커밋 규약을
+          # 커밋 훅이 아니라 여기서 붙잡는다 — 기여자의 로컬 훅은 우리가 강제할 수 없다.
+          if printf '%s' "$TITLE" | grep -qE '^(feat|fix|docs|refactor|test|chore|ci|perf)(\([a-z0-9._-]+\))?!?: .+'; then
+            echo "✔ $TITLE"
+            exit 0
+          fi
+          echo "::error::PR 제목이 커밋 규약을 벗어났습니다: $TITLE"
+          {
+            echo "### PR 제목 규약"
+            echo
+            echo "squash merge 라 이 제목이 그대로 \`main\` 의 커밋 메시지가 됩니다."
+            echo
+            echo '```'
+            echo "type: 한 줄 설명"
+            echo "type(scope): 한 줄 설명"
+            echo '```'
+            echo
+            echo "쓸 수 있는 type — \`feat\` \`fix\` \`docs\` \`refactor\` \`test\` \`chore\` \`ci\` \`perf\`"
+            echo
+            echo "받은 제목: \`$TITLE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+  dependencies:
+    name: 의존성 심사
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      # 이 PR 이 **새로 끌어오는** 의존성만 본다(기존 부채로 남의 PR 을 막지 않는다).
+      # 알려진 취약점과 라이선스를 확인하고 요약을 PR 체크에 남긴다.
+      - uses: actions/dependency-review-action@v4
+        with:
+          # low·moderate 까지 막으면 상시 빨간불이 되고, 빨간불이 상시면 아무도 안 본다.
+          fail-on-severity: high
+          # 이 레포는 MIT 다. 전염성 라이선스가 딸려 들어오면 배포 조건이 통째로 바뀐다.
+          deny-licenses: GPL-3.0, AGPL-3.0, LGPL-3.0
+          comment-summary-in-pr: never # 봇 코멘트로 스레드를 채우지 않는다 — 체크 요약으로 충분하다
