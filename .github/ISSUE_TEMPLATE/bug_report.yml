@@ -1,0 +1,36 @@
+name: 버그 리포트
+description: 봇이 기대와 다르게 동작할 때
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 무슨 일이 일어났나
+      description: 기대한 동작과 실제 동작을 각각 한 줄로.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 절차
+      placeholder: |
+        1. DM 으로 "…" 를 보낸다
+        2. …
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 로그
+      description: |
+        `bin/causeway err` 출력을 붙여 넣는다. **토큰·채널 ID·실명은 지우고 올린다** —
+        마스킹은 슬랙 전송 경로에만 걸려 있고 로컬 로그 파일에는 걸리지 않는다.
+      render: shell
+
+  - type: input
+    id: env
+    attributes:
+      label: 환경
+      placeholder: "node -v / OS / 커밋 해시"

@@ -1,0 +1,27 @@
+name: 기능 제안
+description: 새 기능이나 개선 아이디어
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 문제를 풀려는 건가
+      description: 해결책보다 문제를 먼저. 지금은 어떻게 우회하고 있는지도 도움이 된다.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: 생각하는 방향
+      description: 없어도 된다 — 문제만 있어도 이슈로 충분하다.
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 범위
+      description: |
+        이 레포는 **보일러플레이트**다. 특정 조직에만 필요한 도구(사내 API 연동 등)는 여기 넣지 않고,
+        각자 `src/mcp/` 에 붙이는 것이 설계 의도다.
+      options:
+        - label: 조직과 무관하게 누구에게나 쓸모 있는 변경이다
