@@ -54,10 +54,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # 이 PR 이 **새로 끌어오는** 의존성만 본다(기존 부채로 남의 PR 을 막지 않는다).
       # 알려진 취약점과 라이선스를 확인하고 요약을 PR 체크에 남긴다.
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/dependency-review-action@v5
         with:
           # low·moderate 까지 막으면 상시 빨간불이 되고, 빨간불이 상시면 아무도 안 본다.
           fail-on-severity: high
