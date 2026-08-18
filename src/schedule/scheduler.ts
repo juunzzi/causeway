@@ -15,8 +15,17 @@
  * ── 멱등성 ──────────────────────────────────────────────────────────────────
  * dedup_key 는 발화 시각으로 만든다(cron.fireKey). 맥이 자다 깨서 늦게 알아채도 키가 같아
  * `jobs.dedup_key` UNIQUE 가 중복을 거절한다. **다만 루트 메시지는 큐 삽입 전에 올라가므로,
- * 중복 발화면 게시한 루트가 고아가 된다** — 그래서 순서를 뒤집어 `enqueue` 를 먼저 시도하고
- * 새 잡일 때만 게시한다. 게시 실패 시엔 잡을 취소해 "루트 없는 브리핑"이 남지 않게 한다.
+ * 중복 발화면 게시한 루트가 고아가 된다** — 잡은 거절돼도 메시지는 이미 사람 눈에 보인 뒤라
+ * 되돌릴 수 없다. 그래서 게시 전에 `getByDedupKey` 로 한 번 거른다.
+ *
+ * 그 확인만으로는 부족하다는 것이 2026-08-14 에 드러났다: 확인과 게시 사이가 `await` 이라
+ * **tick 이 겹치면 여러 tick 이 모두 "아직 없다"를 보고 각자 게시한다.** 겹침 자체를 없애는
+ * 것이 유일한 방어라 타이머는 `tick` 이 아니라 `createTicker` 에 건다.
+ *
+ * ── 하루 한 번을 원할 때 ────────────────────────────────────────────────────
+ * 위 dedup 은 **발화 시각** 단위다. 그래서 cron 에 시각을 여러 개 적으면 그만큼 돈다. "하루
+ * 한 번인데, 못 돌았으면 나중에 다시"는 `oncePerDay` 로 표현한다 — 키에서 시각을 떼면
+ * (cron.fireKey 의 `day` 스코프) 그 시각들이 예비 시각이 된다.
  */
 
 import type { JobStore } from "../core/queue/jobStore.js";
@@ -34,6 +43,11 @@ export interface ScheduleDef {
   rootText: string;
   /** 세션에 물릴 프롬프트 파일(레포 루트 기준 상대경로). */
   promptFile: string;
+  /**
+   * 하루 한 번만 실제로 돈다. cron 의 여러 시각은 **예비 시각**이 된다 — 먼저 성공한 하나가
+   * 그날 몫을 가져가고 나머지는 dedup 이 거절한다(cron.fireKey 의 `day` 스코프).
+   */
+  oncePerDay?: boolean;
 }
 
 export interface LoadedSchedule extends ScheduleDef {
@@ -85,6 +99,7 @@ export function validateSchedules(
         userId: d.userId,
         rootText: d.rootText,
         promptFile: d.promptFile,
+        oncePerDay: d.oncePerDay === true,
         parsed,
         prompt,
       });
@@ -118,11 +133,14 @@ export async function tick(deps: SchedulerDeps): Promise<string[]> {
   for (const s of deps.schedules) {
     const at = lastFireAt(s.parsed, now);
     if (!at) continue;
-    const dedupKey = fireKey(s.id, at);
+    const dedupKey = fireKey(s.id, at, s.oncePerDay ? "day" : "fire");
 
     // 이미 처리된 발화면 조용히 넘어간다 — 따라잡기 설계상 같은 발화가 매 tick 계산되는 것이
     // 정상이다. **게시 전에 확인하는 것이 핵심** — 순서를 뒤집으면 중복 발화마다 DM 에
     // 고아 루트가 하나씩 쌓인다.
+    //
+    // 다만 이 확인만으로는 부족하다: 확인과 게시 사이에 `await` 이 있어서, tick 이 겹치면
+    // 여러 tick 이 모두 "아직 없다"를 보고 각자 게시한다(createTicker 참조).
     if (deps.jobs.getByDedupKey(dedupKey)) continue;
 
     let ts: string;
@@ -155,7 +173,41 @@ export async function tick(deps: SchedulerDeps): Promise<string[]> {
     if (outcome.enqueued) {
       fired.push(s.id);
       log(`schedule 발화 — ${s.id} @ ${at.toISOString()} thread=${s.channel}:${ts}`);
+    } else {
+      // 게시는 됐는데 잡은 거절됐다 = 방금 올린 루트가 고아다. 지울 수는 없으니(chat:write
+      // 만으로는 남의 눈에 이미 보인 메시지를 되돌리지 못한다) **드러내기라도 한다** —
+      // 이 줄이 로그에 있으면 DM 에 중복 루트가 하나 쌓였다는 뜻이다.
+      log(`schedule 고아 루트 — ${s.id} @ ${at.toISOString()} ts=${ts} (잡은 중복으로 거절됨)`);
     }
   }
   return fired;
+}
+
+/**
+ * 재진입 가드를 두른 tick. **타이머에는 반드시 이걸 건다 — 맨 `tick` 을 직접 걸면 안 된다.**
+ *
+ * tick 안에는 `postRoot` 라는 네트워크 await 이 있다. 평소엔 수백 ms 라 1분 간격이 겹칠 일이
+ * 없지만, 슬랙이 안 닿으면(DNS 실패·타임아웃) Slack SDK 의 내부 재시도까지 겹쳐 한 번의
+ * postRoot 가 수 분을 붙든다. 그동안 타이머는 계속 새 tick 을 던지고, 각 tick 은 "아직 잡이
+ * 없다"를 똑같이 보고 각자 게시를 예약한다. 네트워크가 돌아오는 순간 **밀려 있던 게시가 전부
+ * 한꺼번에 성공** — DM 에 같은 루트 메시지가 수십 개 쏟아지고, 그중 하나만 잡이 되고 나머지는
+ * dedup_key UNIQUE 에 거절돼 고아로 남는다. (2026-08-14 실측: 09:20~10:20 DNS 장애 구간에서
+ * 한 스케줄의 루트 게시 시도 37회.)
+ *
+ * dedup_key 는 이걸 못 막는다 — 중복을 막는 자리가 `enqueue` 라서, **이미 게시된 메시지**는
+ * 되돌릴 수 없기 때문이다. 그래서 겹침 자체를 없앤다: 앞 tick 이 끝나기 전엔 새 tick 을 아예
+ * 시작하지 않는다. 발화를 놓칠 걱정은 없다 — lastFireAt 이 6시간을 소급하므로 다음 tick 이
+ * 같은 발화를 다시 잡는다.
+ */
+export function createTicker(deps: SchedulerDeps): () => Promise<string[]> {
+  let running = false;
+  return async () => {
+    if (running) return [];
+    running = true;
+    try {
+      return await tick(deps);
+    } finally {
+      running = false;
+    }
+  };
 }

@@ -7,5 +7,16 @@
     "userId": "요청자로 기록될 슬랙 유저 ID (U 로 시작)",
     "rootText": ":sunny: 오늘 브리핑을 만들고 있습니다.",
     "promptFile": "config/prompts/daily-briefing.md"
+  },
+  {
+    "_oncePerDay": "cron 의 여러 시각을 '또 돈다'가 아니라 '못 돌았으면 그때 받는다'로 바꾼다. 아래는 평일(1-5) 9시20분에 시도하고, 머신이 자 있었거나 네트워크가 죽어 있었으면 11시20분·13시20분이 받는 배치다 — 먼저 성공한 하나가 그날 몫을 가져가고 나머지는 dedup 이 거절한다. 주말은 아예 울리지 않는다.",
+    "id": "weekday-digest",
+    "cron": "20 9,11,13 * * 1-5",
+    "oncePerDay": true,
+    "enabled": false,
+    "channel": "슬랙 채널 ID. 봇과의 DM 도 채널이다(D 로 시작)",
+    "userId": "요청자로 기록될 슬랙 유저 ID (U 로 시작)",
+    "rootText": ":eyes: 어제 대화를 읽고 정리하고 있습니다.",
+    "promptFile": "config/prompts/daily-briefing.md"
   }
 ]

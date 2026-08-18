@@ -98,4 +98,13 @@ describe("fireKey (멱등성의 근거)", () => {
     const b = fireKey("x", new Date(2026, 7, 12, 9, 0));
     expect(a).not.toBe(b);
   });
+
+  /** day 스코프 — 예비 시각을 여러 개 적어도 하루치 키는 하나다. */
+  it("scope=day 면 같은 날의 다른 발화 시각이 같은 키가 된다", () => {
+    const at9 = fireKey("x", new Date(2026, 7, 11, 9, 20), "day");
+    const at13 = fireKey("x", new Date(2026, 7, 11, 13, 20), "day");
+    expect(at9).toBe("schedule:x:20260811");
+    expect(at13).toBe(at9);
+    expect(fireKey("x", new Date(2026, 7, 12, 9, 20), "day")).not.toBe(at9);
+  });
 });
