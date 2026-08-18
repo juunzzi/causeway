@@ -42,13 +42,22 @@ channels:
     expect(() => parseChannelsConfig(dup)).toThrow("논리명 중복");
   });
 
-  it("채널 ID 중복은 fail-fast", () => {
+  it("같은 role 안의 채널 ID 중복은 fail-fast", () => {
     const dup = `
 channels:
   - { logical: a, id: C0000000001, role: ops-notify }
   - { logical: b, id: C0000000001, role: ops-notify }
 `;
     expect(() => parseChannelsConfig(dup)).toThrow("채널 ID 중복");
+  });
+
+  it("다른 role 끼리 같은 ID 를 쓰는 것은 허용 — 1인 운영 봇은 두 role 다 본인 DM 이다", () => {
+    const shared = `
+channels:
+  - { logical: ops, id: D0000000001, role: ops-notify }
+  - { logical: release, id: D0000000001, role: release-notify }
+`;
+    expect(parseChannelsConfig(shared)).toHaveLength(2);
   });
 
   it("스키마 위반 — 잘못된 role", () => {

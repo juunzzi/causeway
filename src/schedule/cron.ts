@@ -111,11 +111,20 @@ export function lastFireAt(cron: ParsedCron, now: Date, lookbackMinutes = 360): 
   return null;
 }
 
-/** 발화 시각 → dedup key. 같은 발화는 몇 번을 계산해도 같은 키라 DB가 중복을 거절한다. */
-export function fireKey(scheduleId: string, fireAt: Date): string {
+/**
+ * 발화 시각 → dedup key. 같은 발화는 몇 번을 계산해도 같은 키라 DB가 중복을 거절한다.
+ *
+ * `scope: "day"` 는 시각을 떼고 **날짜만** 키로 쓴다 — cron 에 예비 시각을 여러 개 적어 두고
+ * (`20 9,11,13 * * *`) "그중 먼저 성공한 하나만 돈다"를 만드는 장치다. 9시에 머신이 자거나
+ * 네트워크가 죽어 있으면 11시가, 그것도 놓치면 13시가 받는데, 하루치 키는 하나라 세 번 돌지
+ * 않는다.
+ *
+ * 예비 시각 대신 lookback 을 늘리는 방법도 있지만, 그러면 "언제 다시 시도하나"가 코드 상수에
+ * 숨는다. 설정 파일의 cron 에 드러나는 편이 사람이 고치기 쉽다.
+ */
+export function fireKey(scheduleId: string, fireAt: Date, scope: "fire" | "day" = "fire"): string {
   const p = (n: number, w = 2) => String(n).padStart(w, "0");
-  const stamp =
-    `${fireAt.getFullYear()}${p(fireAt.getMonth() + 1)}${p(fireAt.getDate())}` +
-    `T${p(fireAt.getHours())}${p(fireAt.getMinutes())}`;
-  return `schedule:${scheduleId}:${stamp}`;
+  const date = `${fireAt.getFullYear()}${p(fireAt.getMonth() + 1)}${p(fireAt.getDate())}`;
+  if (scope === "day") return `schedule:${scheduleId}:${date}`;
+  return `schedule:${scheduleId}:${date}T${p(fireAt.getHours())}${p(fireAt.getMinutes())}`;
 }

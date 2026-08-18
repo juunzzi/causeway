@@ -25,7 +25,7 @@ import type { RunningChatTaskInfo } from "./jobs/chat/runningTasks.js";
 import { createEventTracker } from "./resilience/eventTracker.js";
 import { createFileFrictionSink, createFrictionLog } from "./resilience/friction.js";
 import { createResilience, type SocketReconnector } from "./resilience/wiring.js";
-import { tick } from "./schedule/scheduler.js";
+import { createTicker } from "./schedule/scheduler.js";
 import { createSlackHistoryPort, createSlackPort } from "./slack/slackPort.js";
 
 const log = (msg: string): void => console.error(`[causeway] ${msg}`);
@@ -224,21 +224,26 @@ async function main(): Promise<void> {
   await app.start();
   resilience.start();
 
-  // 스케줄 발화기 — 1분 tick. 타이머를 정각에 맞추지 않는 이유는 맥이 자면 정각 타이머가
+  // 스케줄 발화기 — 1분 tick. 타이머를 정각에 맞추지 않는 이유는 머신이 자면 정각 타이머가
   // 통째로 사라지기 때문이다. 매 분 "지난 발화가 있나"를 계산하는 쪽이 슬립에 강하다
-  // (schedule/cron.ts lastFireAt). 중복은 dedup_key 가 막는다.
+  // (schedule/cron.ts lastFireAt).
+  //
+  // **타이머에는 `tick` 이 아니라 `createTicker` 를 건다.** dedup_key 는 잡의 중복만 막고
+  // **이미 게시된 루트 메시지**는 되돌리지 못한다 — 슬랙이 안 닿아 postRoot 가 몇 분씩 붙들리면
+  // 그동안 던져진 tick 들이 모두 "아직 잡이 없다"를 보고 각자 게시한다. 재진입 가드가 그
+  // 겹침 자체를 없앤다(scheduler.ts createTicker 주석).
   if (ctx.schedules.length > 0) {
-    const runTick = () =>
-      tick({
-        schedules: ctx.schedules,
-        jobs: ctx.store,
-        postRoot: async ({ channel, text }) => {
-          const res = await slack.postMessage({ channel, text });
-          if (!res.ts) throw new Error("postMessage 가 ts 를 안 줬다");
-          return res.ts;
-        },
-        log,
-      }).catch((err) => log(`schedule tick 실패: ${String(err)}`));
+    const ticker = createTicker({
+      schedules: ctx.schedules,
+      jobs: ctx.store,
+      postRoot: async ({ channel, text }) => {
+        const res = await slack.postMessage({ channel, text });
+        if (!res.ts) throw new Error("postMessage 가 ts 를 안 줬다");
+        return res.ts;
+      },
+      log,
+    });
+    const runTick = () => ticker().catch((err) => log(`schedule tick 실패: ${String(err)}`));
     setInterval(runTick, 60_000).unref();
     void runTick(); // 부팅 직후 1회 — 꺼져 있는 동안 지나간 발화를 즉시 따라잡는다
   }

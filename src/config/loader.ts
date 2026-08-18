@@ -60,19 +60,32 @@ export function parseChannelsConfig(yamlText: string): ChannelDecl[] {
   return parsed.data.channels;
 }
 
-/** 중복 논리명/ID 는 부팅 실패 — 잘못된 채널로 조용히 게시되는 사고를 구조적으로 막는다. */
+/**
+ * 중복 논리명, 그리고 **같은 role 안의** 중복 ID 는 부팅 실패 — 잘못된 채널로 조용히 게시되는
+ * 사고를 구조적으로 막는다.
+ *
+ * **다른 role 끼리 같은 ID 를 쓰는 것은 허용한다.** 1인 운영 봇에서는 ops-notify 와
+ * release-notify 가 같은 DM 인 것이 자연스러운데, 전면 금지였을 때는 그 조합이 부팅을 죽여
+ * ops-notify 선언 자체를 포기하게 됐고 그러면 워치독·재시작 통보가 로그로만 남는다.
+ * 막으려던 사고(같은 role 에 두 채널이 걸려 어디로 갈지 모호해지는 것)는 role 을 키에 넣는
+ * 것으로 그대로 막힌다.
+ */
 export function assertNoChannelDuplicates(channels: readonly ChannelDecl[]): void {
   const logicals = new Set<string>();
-  const ids = new Set<string>();
+  const idRoles = new Set<string>();
   for (const ch of channels) {
     if (logicals.has(ch.logical)) {
       throw new ConfigError(`channels.yaml 논리명 중복: '${ch.logical}'`);
     }
-    if (ids.has(ch.id)) {
-      throw new ConfigError(`channels.yaml 채널 ID 중복: '${ch.id}'`);
+    // NUL 을 구분자로 쓰는 것은 채널 ID·role 어디에도 나타날 수 없는 바이트이기 때문이다.
+    // 소스에는 반드시 이스케이프로 적는다 — 리터럴로 넣으면 git 이 이 파일을 바이너리로
+    // 취급해 diff 가 통째로 사라진다.
+    const idRole = `${ch.id}\u0000${ch.role}`;
+    if (idRoles.has(idRole)) {
+      throw new ConfigError(`channels.yaml 채널 ID 중복(같은 role): '${ch.id}'`);
     }
     logicals.add(ch.logical);
-    ids.add(ch.id);
+    idRoles.add(idRole);
   }
 }
 
