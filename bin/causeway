@@ -15,10 +15,27 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="causeway"
 ECOSYSTEM="$ROOT/ecosystem.config.cjs"
-ERR_LOG="$ROOT/var/log/${APP}.err.log"
-OUT_LOG="$ROOT/var/log/${APP}.out.log"
+
+# 앱 이름·로그 경로는 ecosystem 이 유일한 출처다 — 여기 값을 복사해 두면 이름을 바꿔 쓰는
+# 포크(docs/EXTENDING.md §1)에서 한쪽만 남아 pm2 명령이 조용히 빗나간다(scripts/restart.sh 주석).
+_eco() {
+  node -e '
+    const app = require(process.argv[1]).apps[0];
+    if (!app) { process.exit(2); }
+    process.stdout.write(String(app[process.argv[2]] ?? ""));
+  ' "$ECOSYSTEM" "$1" 2>/dev/null
+}
+
+APP="$(_eco name)"
+if [[ -z "$APP" ]]; then
+  echo "❌ ecosystem.config.cjs 에서 apps[0].name 을 읽지 못했다" >&2
+  exit 1
+fi
+ERR_LOG="$ROOT/$(_eco error_file)"
+OUT_LOG="$ROOT/$(_eco out_file)"
+[[ "$ERR_LOG" == "$ROOT/" ]] && ERR_LOG="$ROOT/var/log/${APP}.err.log"
+[[ "$OUT_LOG" == "$ROOT/" ]] && OUT_LOG="$ROOT/var/log/${APP}.out.log"
 
 PM2="${PM2_BIN:-pm2}"
 command -v "$PM2" >/dev/null 2>&1 || PM2="$ROOT/node_modules/.bin/pm2"

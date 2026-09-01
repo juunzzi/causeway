@@ -8,9 +8,34 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-APP="causeway"
-ERR_LOG="$ROOT/var/log/${APP}.err.log"
-OUT_LOG="$ROOT/var/log/${APP}.out.log"
+
+# ── PM2 앱 이름·로그 경로는 ecosystem.config.cjs 에서 읽는다 ────────────────────
+# 여기 값을 따로 적어 두면 안 된다. 이 봇을 자기 이름으로 바꿔 쓰는 포크(docs/EXTENDING.md §1)
+# 에서 한쪽만 남으면 `pm2 restart --only <옛이름>` 이 **아무것도 재시작하지 않은 채 exit 0** 으로
+# 끝나고, 뒤이은 폴링은 새 로그가 없으니 "부팅 신호 없음"으로 실패한다. 재시작이 조용히 no-op
+# 이 되는 것이라 원인을 찾기 어렵다.
+#
+# 앱 이름과 로그 경로가 **서로 다른 필드에서 온다**는 것도 함정이다(name vs error_file/out_file).
+# 이름만 바꾸고 로그 파일명을 안 바꾸면 폴링이 엉뚱한 파일을 본다. 둘 다 같은 파일에서 읽으면
+# 어긋날 자리가 없어진다.
+_eco() {
+  node -e '
+    const app = require(process.argv[1]).apps[0];
+    if (!app) { process.exit(2); }
+    process.stdout.write(String(app[process.argv[2]] ?? ""));
+  ' "$ROOT/ecosystem.config.cjs" "$1" 2>/dev/null
+}
+
+APP="$(_eco name)"
+if [[ -z "$APP" ]]; then
+  echo "❌ ecosystem.config.cjs 에서 apps[0].name 을 읽지 못했다 — 재시작 대상을 특정할 수 없다" >&2
+  exit 1
+fi
+# error_file/out_file 이 없으면 PM2 기본 경로가 아니라 앱 이름 규약으로 되돌아간다.
+ERR_LOG="$ROOT/$(_eco error_file)"
+OUT_LOG="$ROOT/$(_eco out_file)"
+[[ "$ERR_LOG" == "$ROOT/" ]] && ERR_LOG="$ROOT/var/log/${APP}.err.log"
+[[ "$OUT_LOG" == "$ROOT/" ]] && OUT_LOG="$ROOT/var/log/${APP}.out.log"
 # 성공하면 즉시 빠져나오므로 이 값은 "정상 부팅 시간"이 아니라 **오판 방지 여유**다.
 # 30s 였을 때 부팅이 무음으로 31s 멈춘 것을 실패로 판정해 멀쩡한 커밋을 롤백+격리한 적이 있다
 # (2026-07-30 9cc1ca2). 지금은 부팅 인증에 15s 마감(CONTRACT.BOOT_AUTH_DEADLINE_MS)이 걸려
@@ -26,6 +51,15 @@ _lines() { { cat "$ERR_LOG" "$OUT_LOG" 2>/dev/null || true; } | wc -l | tr -d ' 
 BASELINE=$(_lines)
 
 echo "🔄 $APP 재시작 (부팅 판정 타임아웃 ${TIMEOUT_SEC}s)"
+# 등록 여부를 먼저 본다. `pm2 restart … --only <없는이름>` 은 **exit 0 으로 조용히 끝나고**,
+# 그 뒤 폴링은 새 로그가 없으니 "부팅 신호 없음"으로 실패한다 — 원인이 이름 불일치인지
+# 진짜 부팅 실패인지 구분되지 않는다. 여기서 갈라 놓는다.
+if ! "$PM2" describe "$APP" >/dev/null 2>&1; then
+  echo "❌ PM2 에 '$APP' 앱이 없다 — 재시작할 대상이 없다." >&2
+  echo "   먼저 설치하거나(bin/<앱> install), ecosystem.config.cjs 의 apps[0].name 을 확인한다." >&2
+  exit 1
+fi
+
 "$PM2" restart "$ROOT/ecosystem.config.cjs" --only "$APP" --update-env >/dev/null
 
 # 성공/실패 신호 정규식.
